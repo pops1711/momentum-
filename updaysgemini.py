@@ -130,7 +130,13 @@ roc_filter = st.sidebar.checkbox("Filter by 3M Momentum (>15%)", value=True)
 st.markdown('<div class="main-header">🚀 NSE High-Momentum Scanner</div>', unsafe_allow_html=True)
 st.write(f"Scanning for stocks in **Stage 2 Uptrends** with positive **Relative Strength** vs {BENCHMARK}")
 
+if "scan_run" not in st.session_state:
+    st.session_state["scan_run"] = False
+
 if st.sidebar.button("Run Global Scan", type="primary"):
+    st.session_state["scan_run"] = True
+
+if st.session_state["scan_run"]:
     # Prepare tickers
     tickers_to_scan = []
     for s in selected_sectors:
