@@ -173,7 +173,7 @@ if st.sidebar.button("Run Global Scan", type="primary"):
         m3.metric("Top Performer", filtered_df.iloc[filtered_df['3M ROC %'].argmax()]['Stock'] if not filtered_df.empty else "N/A")
         m4.metric("Market Breadth", f"{len(full_df[full_df['Trend'] != 'BEARISH'])} / {len(full_df)}")
 
-        # Visuals
+        # --- UI OPTIMIZATION: SECTOR DRILL-DOWN ---
         st.markdown("---")
         
         st.subheader("🔥 Momentum Heatmap (RS vs ROC)")
@@ -187,34 +187,81 @@ if st.sidebar.button("Run Global Scan", type="primary"):
         fig.add_vline(x=0, line_dash="dash", line_color="gray")
         fig.update_traces(textposition='top center')
         st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("📊 Sector Momentum Rank")
-        # Sort ascending=True so highest values appear at the top of the horizontal bar chart
-        sec_rank = full_df.groupby('Sector')['RS Score'].mean().sort_values(ascending=True).reset_index()
-        fig_sec = px.bar(
-            sec_rank, x='RS Score', y='Sector', orientation='h', 
-            color='RS Score', color_continuous_scale='RdYlGn',
-            text='RS Score', height=400
-        )
-        fig_sec.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-        fig_sec.update_layout(showlegend=False, yaxis_title="", xaxis_title="Average RS Score")
-        st.plotly_chart(fig_sec, use_container_width=True)
 
-        # The Leaderboard Table
-        st.subheader("🏆 Momentum Leaderboard")
+        st.markdown("---")
+        col_rank, col_detail = st.columns([1, 1])
+
+        with col_rank:
+            st.subheader("📊 Sector Momentum Rank")
+            # Sort ascending=True so highest values appear at the top of the horizontal bar chart
+            sec_rank = full_df.groupby('Sector')['RS Score'].mean().sort_values(ascending=True).reset_index()
+            
+            # Create the horizontal chart
+            fig_sec = px.bar(
+                sec_rank, x='RS Score', y='Sector', orientation='h', 
+                color='RS Score', color_continuous_scale='RdYlGn',
+                height=350,
+                text='RS Score'
+            )
+            fig_sec.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+            fig_sec.update_layout(showlegend=False, yaxis_title="", xaxis_title="Average RS Score", margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig_sec, use_container_width=True)
+
+        with col_detail:
+            st.subheader("🎯 Sector Deep Dive")
+            # This is the "Click" equivalent in Streamlit
+            sector_list_order = full_df.groupby('Sector')['RS Score'].mean().sort_values(ascending=False).index.tolist()
+            target_sector = st.selectbox(
+                "Select a Sector to see its Momentum Leaders:", 
+                ["All Sectors"] + sector_list_order
+            )
+            
+            # Filter logic for drill-down
+            if target_sector == "All Sectors":
+                display_df = full_df[full_df['Stage 2'] == "✅"]
+            else:
+                display_df = full_df[full_df['Sector'] == target_sector]
+
+            # Mini-stats for the selected sector
+            s_m1, s_m2 = st.columns(2)
+            s_m1.metric("Stage 2 Count", len(display_df[display_df['Stage 2'] == "✅"]))
+            if not display_df.empty:
+                s_m2.metric("Sector Avg RS", round(display_df['RS Score'].mean(), 2))
+            else:
+                s_m2.metric("Sector Avg RS", "N/A")
+
+        # --- UPDATED LEADERBOARD ---
+        st.subheader(f"🏆 {target_sector} Leaderboard")
         
+        # Apply the specific trend coloring
         def color_trend(val):
-            color = '#10B981' if val == 'SUPER MOMENTUM' else '#3B82F6' if val == 'BULLISH' else '#EF4444'
-            return f'background-color: {color}; color: white; font-weight: bold'
+            if val == 'SUPER MOMENTUM': return 'background-color: #10B981; color: white'
+            if val == 'BULLISH': return 'background-color: #3B82F6; color: white'
+            if val == 'BEARISH': return 'background-color: #EF4444; color: white'
+            return ''
 
-        styled_leaderboard = filtered_df.sort_values('RS Score', ascending=False).style.format({
-            'Price': '₹{:.2f}',
-            'RS Score': '{:.2f}',
-            '3M ROC %': '{:.1f}%',
-            'Dist 52W High %': '{:.1f}%'
-        }).applymap(color_trend, subset=['Trend'])
+        # Sort by RS Score to show leaders at the top
+        final_df = display_df.sort_values('RS Score', ascending=False)
         
-        st.dataframe(styled_leaderboard, use_container_width=True, height=500)
+        st.dataframe(
+            final_df.style.format({
+                'Price': '₹{:.2f}',
+                'RS Score': '{:.2f}',
+                '3M ROC %': '{:.1f}%',
+                'Dist 52W High %': '{:.1f}%'
+            }).map(color_trend, subset=['Trend']),
+            use_container_width=True,
+            height=400
+        )
+
+        # --- BREADTH ANALYSIS CHART ---
+        st.subheader("📈 Market Breadth Trend")
+        # Visualizing the ratio of Stage 2 stocks across sectors
+        breadth_df = full_df.groupby('Sector')['Stage 2'].apply(lambda x: (x == "✅").sum()).reset_index()
+        fig_breadth = px.pie(breadth_df, values='Stage 2', names='Sector', hole=.4,
+                             title="Distribution of Stage 2 Leaders",
+                             color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig_breadth, use_container_width=True)
 
         # Trading Insights Logic
         st.info("💡 **Strategy Guide:** Focus on stocks with '✅' in Stage 2. These have the structural support of institutions. 'Super Momentum' indicates the stock is accelerating away from the benchmark.")
